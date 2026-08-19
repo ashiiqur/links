@@ -27,6 +27,29 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Patrick+Hand&family=Special+Elite&display=swap" rel="stylesheet">
+<script>
+/* Hold the page hidden (see the html:not(.fonts-ready) rule below) until
+   the actual webfonts have finished loading, so nothing ever flashes in
+   the browser's fallback font first. A short timeout is a safety net in
+   case a font request stalls, so the page never stays hidden forever. */
+(function(){
+  function reveal(){ document.documentElement.classList.add("fonts-ready"); }
+  if (document.fonts && document.fonts.ready){
+    Promise.race([
+      Promise.all([
+        document.fonts.load('700 1em Caveat'),
+        document.fonts.load('600 1em Caveat'),
+        document.fonts.load('400 1em "Patrick Hand"'),
+        document.fonts.load('400 1em "Special Elite"')
+      ]).then(function(){ return document.fonts.ready; }),
+      new Promise(function(resolve){ setTimeout(resolve, 3000); })
+    ]).then(reveal, reveal);
+  } else {
+    reveal();
+  }
+})();
+</script>
+<noscript><style>html{ visibility:visible !important; }</style></noscript>
 <style>
   :root{
     --paper:#f7f2e6;
@@ -63,6 +86,12 @@
 
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
+
+  /* keep the page invisible until the "fonts-ready" class above lands, so
+     the very first paint already has the real webfonts — no fallback-font
+     flash while Caveat / Patrick Hand / Special Elite finish loading */
+  html:not(.fonts-ready){ visibility:hidden; }
+  html.fonts-ready{ visibility:visible; }
 
   body{
     min-height:100vh;
@@ -733,7 +762,7 @@
 
   /* ============ MOBILE ============ */
   @media (max-width:480px){
-    .page{ padding:32px 18px 28px 66px; }
+    .page{ padding:32px 24px 28px 66px; }
     .holes{ left:10px; width:14px; }
     .hole{ width:10px; height:10px; }
     .margin-line{ left:42px; }
@@ -889,11 +918,27 @@
     height:100%;
     z-index:8;
     pointer-events:none;
+    /* hidden by default, unconditionally — set in plain CSS rather than
+       toggled on by JS, so there is no window (however small) where the
+       canvas could paint at full opacity before a script gets a chance to
+       hide it. JS only ever moves this forward, from 0 to 1, exactly once. */
+    opacity:0;
   }
   .doodle-canvas.drawing-active{
     pointer-events:auto;
     touch-action:none;
     cursor:crosshair;
+  }
+  /* the actual "show it" state — added once, after the page has fully
+     finished loading AND its own entrance animations (settle + card-in)
+     have finished playing. With no saved drawing, this is added instantly
+     at init — the empty canvas simply becomes usable right away. With a
+     saved drawing, the canvas is revealed here at opacity:1 while still
+     blank, and the strokes are then replayed onto it by JS (see
+     animateDrawIn) so the drawing appears to draw itself in, rather than
+     fading in already-complete. */
+  .doodle-canvas.doodle-revealed{
+    opacity:1;
   }
 
   .doodle-dock{
@@ -913,9 +958,12 @@
 
   .doodle-toolbar-wrap{
     position:absolute;
-    left:50%;
     bottom:calc(100% + 10px);
-    transform:translateX(-50%);
+    /* left/transform are set by JS (see positionToolbarWrap): centered on
+       the button whenever there's room, but nudged sideways (and/or up or
+       down) just far enough to stay fully on-screen when the button sits
+       near an edge. The button itself never moves to make room — it stays
+       exactly where it was dropped, and only the toolbar adjusts. */
     display:flex;
     flex-direction:column;
     align-items:center;
@@ -955,16 +1003,6 @@
   /* while being dragged, kill text selection so the button tracks the
      pointer exactly without the page trying to select nearby text */
   .doodle-dock.dragging{ user-select:none; -webkit-user-select:none; }
-
-  /* applied only for the programmatic "tuck in so the toolbar isn't cut
-     off" / "slide back home" moves — never during an actual finger/mouse
-     drag (which needs the button to track the pointer 1:1, with no lag) */
-  .doodle-dock.snap-anim{
-    transition:left .32s cubic-bezier(.22,.61,.36,1), top .32s cubic-bezier(.22,.61,.36,1);
-  }
-  @media (prefers-reduced-motion: reduce){
-    .doodle-dock.snap-anim{ transition:none; }
-  }
 
   .doodle-panel{
     display:flex;
@@ -1644,7 +1682,7 @@ const categoryLabels = { social:"Social", work:"Work", other:"Other" };
 const icons = {
   youtube:   `<svg viewBox="0 0 48 48"><rect x="6" y="12" width="36" height="24" rx="8"/><path class="fill" d="M20 18l13 6-13 6z"/></svg>`,
   x:         `<svg viewBox="0 0 48 48"><path d="M8 10h32a2 2 0 0 1 2 2v18a2 2 0 0 1-2 2H20l-8 8v-8H8a2 2 0 0 1-2-2V12a2 2 0 0 1 2-2z"/><path d="M17 17l14 12M31 17l-14 12"/></svg>`,
-  facebook:  `<svg viewBox="0 0 48 48"><path d="M11 22h6v16h6V22h7l1-8h-8v-4c0-2 1-3 3-3h5V0h-7c-6 0-9 4-9 10v4h-4z"/></svg>`,
+  facebook:  `<svg viewBox="0 0 48 48"><path d="M11 24h6v16h6V24h7l1-8h-8v-4c0-2 1-3 3-3h5V2h-7c-6 0-9 4-9 10v4h-4z"/></svg>`,
   github:    `<svg viewBox="0 0 48 48"><path d="M17 14L7 24l10 10"/><path d="M31 14l10 10-10 10"/><path d="M27 9l-6 30"/></svg>`,
   instagram: `<svg viewBox="0 0 48 48"><rect x="7" y="12" width="34" height="26" rx="7"/><circle cx="24" cy="25" r="7.5"/><circle class="fill" cx="33.5" cy="18" r="1.6"/></svg>`,
   linkedin:  `<svg viewBox="0 0 48 48"><rect x="8" y="18" width="32" height="20" rx="3"/><path d="M18 18v-4a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v4"/><path d="M8 27h32"/></svg>`,
@@ -2114,6 +2152,69 @@ document.querySelectorAll(".card-icon svg").forEach((svg, i) => {
     strokes.forEach(drawFullStroke);
   }
 
+  /* draws only the first `count` points of a stroke — same path-building
+     logic as drawFullStroke, just truncated, so a stroke can be painted
+     partway through mid-animation */
+  function drawPartialStroke(stroke, count){
+    const pts = stroke.points.slice(0, count);
+    if (pts.length < 2) return;
+    applyStyle(stroke);
+    ctx.beginPath();
+    const p0 = toPx(pts[0]);
+    ctx.moveTo(p0.x, p0.y);
+    if (pts.length === 2){
+      const p1 = toPx(pts[1]);
+      ctx.lineTo(p1.x, p1.y);
+    } else {
+      for (let i = 1; i < pts.length - 1; i++){
+        const curr = toPx(pts[i]);
+        const next = toPx(pts[i+1]);
+        const mid = { x:(curr.x+next.x)/2, y:(curr.y+next.y)/2 };
+        ctx.quadraticCurveTo(curr.x, curr.y, mid.x, mid.y);
+      }
+      const last = toPx(pts[pts.length-1]);
+      ctx.lineTo(last.x, last.y);
+    }
+    ctx.stroke();
+    resetStyle();
+  }
+
+  /* Replays a saved set of strokes onto the (already-cleared, already
+     visible) canvas over time, as if it were being hand-drawn live —
+     used on load to reveal a saved doodle instead of fading it in already
+     finished. Paces itself by total point count across all strokes, so a
+     bigger drawing takes proportionally longer, clamped to a sane range. */
+  function animateDrawIn(strokesToPlay){
+    const totalPoints = strokesToPlay.reduce((sum, s) => sum + s.points.length, 0);
+    if (totalPoints === 0) return;
+    const duration = Math.min(2200, Math.max(900, totalPoints * 5));
+    const start = performance.now();
+
+    function frame(now){
+      const progress = Math.min(1, (now - start) / duration);
+      let pointBudget = Math.floor(progress * totalPoints);
+
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+
+      for (const stroke of strokesToPlay){
+        if (pointBudget <= 0) break;
+        const n = Math.min(stroke.points.length, pointBudget);
+        drawPartialStroke(stroke, n);
+        pointBudget -= stroke.points.length;
+      }
+
+      if (progress < 1){
+        requestAnimationFrame(frame);
+      } else {
+        redrawAll(); // guarantees the exact final state, no rounding gaps
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
   function resizeCanvas(){
     const dpr = window.devicePixelRatio || 1;
     const w = canvas.clientWidth;
@@ -2351,7 +2452,92 @@ document.querySelectorAll(".card-icon svg").forEach((svg, i) => {
   loadStrokes();
   updateToolbarLock();
   markDirty(false);
+
+  /* if there's a saved drawing to show, keep it invisible (but already
+     sized and painted, so it's instantly ready) until the whole page —
+     images, fonts, everything — has actually finished loading, AND the
+     page's own entrance animations (the notebook "settle" tilt-in and
+     the staggered card-in fly-ins) have finished playing, then fade it
+     in rather than having it pop in already-drawn while the rest of the
+     page is still animating on top of it. */
+  const hasSavedDrawing = strokes.length > 0;
+
   requestAnimationFrame(() => requestAnimationFrame(resizeCanvas));
+
+  if (hasSavedDrawing){
+    const prefersReducedMotion = window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    /* Resolves once a given element's named CSS animation has finished.
+       Falls back to a timeout so the doodle can never get stuck hidden —
+       covers reduced-motion (animation:none, so no event ever fires),
+       an element that doesn't exist, or any other edge case where
+       "animationend" just doesn't arrive. */
+    function whenAnimationEnds(el, animationName, fallbackMs){
+      return new Promise((resolve) => {
+        if (!el || prefersReducedMotion){ resolve(); return; }
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          el.removeEventListener("animationend", onEnd);
+          resolve();
+        };
+        const onEnd = (e) => { if (e.animationName === animationName) finish(); };
+        el.addEventListener("animationend", onEnd);
+        window.setTimeout(finish, fallbackMs);
+      });
+    }
+
+    /* Waits for the notebook page's "settle" animation (.7s, no delay)
+       and for the LAST card's "card-in" animation to finish — cards are
+       staggered by (index * 90ms), so whichever card has the biggest
+       --delay is the one that finishes last, regardless of DOM order. */
+    function siteEntranceDonePromise(){
+      const pageDone = whenAnimationEnds(document.querySelector(".page"), "settle", 900);
+
+      let maxDelay = 0, lastCard = null;
+      document.querySelectorAll(".card").forEach((c) => {
+        const ms = parseFloat(c.style.getPropertyValue("--delay")) || 0;
+        if (ms >= maxDelay){ maxDelay = ms; lastCard = c; }
+      });
+      const cardsDone = whenAnimationEnds(lastCard, "card-in", maxDelay + 700);
+
+      return Promise.all([pageDone, cardsDone]);
+    }
+
+    const windowLoadPromise = document.readyState === "complete"
+      ? Promise.resolve()
+      : new Promise((resolve) => window.addEventListener("load", resolve, { once:true }));
+
+    Promise.all([windowLoadPromise, siteEntranceDonePromise()]).then(() => {
+      resizeCanvas(); // layout may have shifted further while loading
+      window.setTimeout(() => {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (prefersReducedMotion){
+            /* respect reduced motion: just show the finished drawing,
+               no fade and no stroke-by-stroke replay */
+            canvas.classList.add("doodle-revealed");
+            return;
+          }
+          /* clear what resizeCanvas() just painted, reveal the (now
+             blank) canvas instantly, then replay every saved stroke on
+             top of it so the drawing appears to draw itself in, pen
+             stroke by pen stroke, instead of fading in already-done */
+          ctx.save();
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.restore();
+          canvas.classList.add("doodle-revealed");
+          animateDrawIn(strokes);
+        }));
+      }, 500);
+    });
+  } else {
+    /* nothing saved to fade in — just make the (currently empty) canvas
+       usable right away so live drawing isn't blocked behind opacity:0 */
+    canvas.classList.add("doodle-revealed");
+  }
 })();
 
 /* ---- draggable doodle button: the FAB (and the toolbar it opens) can be
@@ -2361,8 +2547,16 @@ document.querySelectorAll(".card-icon svg").forEach((svg, i) => {
    fraction of the viewport so it still lands somewhere sensible after a
    resize or orientation change. The dock is sized to exactly match the
    button (see CSS), and the toolbar lives in its own separately-anchored
-   wrapper, so opening/closing it never resizes the dock and never nudges
-   the button off the spot it's sitting on. ---- */
+   wrapper, centered on the button whenever there's room.
+
+   Keeping the open toolbar on-screen: the BUTTON never moves to make room
+   for the toolbar — it stays exactly where it was dropped. Instead, when
+   the toolbar (or the pen-options sub-panel) would be cut off — because
+   the button is sitting near a screen edge — the TOOLBAR itself is
+   nudged sideways (and/or vertically) just far enough to stay fully
+   visible, while remaining anchored to the button. No animation, no
+   resizing — it simply sticks to the nearest position that keeps it
+   on-screen. See positionToolbarWrap. ---- */
 (function(){
   const dock        = document.getElementById("doodle-dock");
   const fab          = document.getElementById("doodle-fab");
@@ -2380,12 +2574,6 @@ document.querySelectorAll(".card-icon svg").forEach((svg, i) => {
   let pointerId = null;
   let startX = 0, startY = 0, startLeft = 0, startTop = 0;
 
-  /* Wherever the button was resting (its true, user-chosen spot) right
-     before it got nudged inward to make room for the toolbar. Null means
-     "not currently nudged" — the button is exactly where it should be. */
-  let homePos   = null;
-  let snapTimer = null;
-
   function clamp(val, min, max){ return Math.min(Math.max(val, min), max); }
 
   function applyPosition(left, top){
@@ -2400,17 +2588,6 @@ document.querySelectorAll(".card-icon svg").forEach((svg, i) => {
     dock.style.bottom = "auto";
     dock.style.transform = "none";
     return { left, top };
-  }
-
-  /* Same as applyPosition, but eased with a slide instead of jumping —
-     used only for the automatic "tuck in" / "slide back" moves, never for
-     live dragging. */
-  function slideDock(left, top){
-    dock.classList.add("snap-anim");
-    const applied = applyPosition(left, top);
-    window.clearTimeout(snapTimer);
-    snapTimer = window.setTimeout(() => dock.classList.remove("snap-anim"), 340);
-    return applied;
   }
 
   function savePosition(left, top){
@@ -2436,42 +2613,42 @@ document.querySelectorAll(".card-icon svg").forEach((svg, i) => {
     });
   }
 
-  /* If nudging the button inward was needed to fit the toolbar, this
-     slides it back to the exact spot it was resting at before — with the
-     same easing as the tuck-in move. */
-  function restoreHomeIfShifted(){
-    if (!homePos) return;
-    const target = homePos;
-    homePos = null;
-    slideDock(target.left, target.top);
-  }
-
-  /* Once the toolbar's on-screen size is known (after the open/close flip
-     decision below has settled), nudge the button the minimum distance
-     needed to keep the toolbar fully on-screen — left/right as well as
-     top/bottom. The very first nudge remembers where the button actually
-     was, so it can slide back there once the toolbar closes. Runs again
-     on every visibility change (e.g. the pen-options sub-panel opening
-     widens the toolbar) so it keeps re-fitting as needed. */
-  function keepToolbarOnScreen(){
+  /* Positions the toolbar wrapper relative to the button: centered
+     horizontally on it by default, but nudged left/right (via `left`) and,
+     separately, up/down (via a `translateY` transform) just enough to keep
+     it fully on-screen when the button is sitting close to an edge. The
+     button's own position is never touched here — only the toolbar moves.
+     Runs whenever the toolbar opens/closes, whenever the pen-options
+     sub-panel changes the toolbar's size, and while the button is being
+     dragged with the toolbar open. */
+  function positionToolbarWrap(){
     const toolbarOpen = panel && !panel.hidden;
     const optionsOpen = optionsPanel && !optionsPanel.hidden;
-    if (!toolbarOpen && !optionsOpen) return;
-
-    if (!homePos){
-      const r = dock.getBoundingClientRect();
-      homePos = { left:r.left, top:r.top };
+    if (!toolbarOpen && !optionsOpen){
+      wrap.style.left = "";
+      wrap.style.transform = "";
+      return;
     }
 
     const dockRect = dock.getBoundingClientRect();
-    const wrapRect = wrap.getBoundingClientRect();
-    let dx = 0, dy = 0;
-    if (wrapRect.left < MARGIN) dx = MARGIN - wrapRect.left;
-    else if (wrapRect.right > window.innerWidth - MARGIN) dx = (window.innerWidth - MARGIN) - wrapRect.right;
-    if (wrapRect.top < MARGIN) dy = MARGIN - wrapRect.top;
-    else if (wrapRect.bottom > window.innerHeight - MARGIN) dy = (window.innerHeight - MARGIN) - wrapRect.bottom;
+    const wrapWidth = wrap.offsetWidth;
 
-    if (dx || dy) slideDock(dockRect.left + dx, dockRect.top + dy);
+    // default: dead-centered on the button
+    let left = (dockRect.width - wrapWidth) / 2;
+    const pageLeft  = dockRect.left + left;
+    const pageRight = pageLeft + wrapWidth;
+    if (pageLeft < MARGIN) left += (MARGIN - pageLeft);
+    else if (pageRight > window.innerWidth - MARGIN) left -= (pageRight - (window.innerWidth - MARGIN));
+    wrap.style.left = left + "px";
+
+    // vertical: measure where it actually landed (after the flip-up/down
+    // rule + the left shift above) and nudge with translateY if it's still
+    // poking off the top or bottom edge
+    const rect = wrap.getBoundingClientRect();
+    let dy = 0;
+    if (rect.top < MARGIN) dy = MARGIN - rect.top;
+    else if (rect.bottom > window.innerHeight - MARGIN) dy = (window.innerHeight - MARGIN) - rect.bottom;
+    wrap.style.transform = dy !== 0 ? `translateY(${dy}px)` : "";
   }
 
   /* if the button ends up near the top of the screen, the toolbar (which
@@ -2482,7 +2659,7 @@ document.querySelectorAll(".card-icon svg").forEach((svg, i) => {
     const toolbarOpen  = panel && !panel.hidden;
     const optionsOpen  = optionsPanel && !optionsPanel.hidden;
     if (!toolbarOpen && !optionsOpen){
-      restoreHomeIfShifted();
+      positionToolbarWrap();
       return;
     }
     requestAnimationFrame(() => {
@@ -2490,7 +2667,7 @@ document.querySelectorAll(".card-icon svg").forEach((svg, i) => {
       const wrapHeight = wrap.getBoundingClientRect().height;
       const gap = 10;
       wrap.classList.toggle("flip-down", wrapHeight + gap > dockRect.top);
-      requestAnimationFrame(keepToolbarOnScreen);
+      requestAnimationFrame(positionToolbarWrap);
     });
   }
   const visibilityObserver = new MutationObserver(updateFlip);
@@ -2502,11 +2679,6 @@ document.querySelectorAll(".card-icon svg").forEach((svg, i) => {
     dragging = true;
     moved = false;
     pointerId = e.pointerId;
-    /* grabbing the button mid-slide should cancel any in-flight tuck-in/
-       slide-back animation so the drag tracks the pointer immediately,
-       with no eased lag */
-    window.clearTimeout(snapTimer);
-    dock.classList.remove("snap-anim");
     const rect = dock.getBoundingClientRect();
     startLeft = rect.left;
     startTop  = rect.top;
@@ -2527,6 +2699,9 @@ document.querySelectorAll(".card-icon svg").forEach((svg, i) => {
     if (!moved) return;
     e.preventDefault();
     applyPosition(startLeft + dx, startTop + dy);
+    // keep the toolbar glued to (and fully on-screen relative to) the
+    // button in real time, in case it's open while being dragged
+    positionToolbarWrap();
   });
 
   function endDrag(){
@@ -2538,10 +2713,6 @@ document.querySelectorAll(".card-icon svg").forEach((svg, i) => {
     if (moved){
       const rect = dock.getBoundingClientRect();
       savePosition(rect.left, rect.top);
-      /* if the toolbar happens to be open while the button gets dragged,
-         treat wherever it was just dropped as the new "home" to slide
-         back to on close, instead of the spot from before the drag */
-      homePos = null;
       updateFlip();
     }
   }
