@@ -1811,6 +1811,10 @@ const qrModalUrl      = document.getElementById("qr-modal-url");
 const qrModalClose    = document.getElementById("qr-modal-close");
 const qrModalDownload = document.getElementById("qr-modal-download");
 let qrModalLastFocused = null;
+/* Tracks whether we've pushed a history entry for the open modal, so the
+   device/browser back button closes the popup instead of navigating away
+   from the page. */
+let qrModalHistoryPushed = false;
 
 function openQrModal(link, tapeColor){
   if (!qrModalOverlay || !qrModalQr) return;
@@ -1826,15 +1830,37 @@ function openQrModal(link, tapeColor){
     qrModalOverlay.classList.add("open");
   }));
   qrModalClose.focus();
+
+  /* Push a dummy history entry so a back-button/gesture press while the
+     popup is open just pops this entry (closing the popup) instead of
+     leaving the page. */
+  history.pushState({ qrModal: true }, "");
+  qrModalHistoryPushed = true;
 }
 
-function closeQrModal(){
+/* fromPopState is true when this was triggered by the back button (via the
+   popstate listener below) — in that case the history entry is already
+   being consumed by the browser, so we must NOT call history.back() again. */
+function closeQrModal(fromPopState){
   if (!qrModalOverlay || !qrModalOverlay.classList.contains("open")) return;
   qrModalOverlay.classList.remove("open");
   document.body.style.overflow = "";
   setTimeout(() => { qrModalOverlay.hidden = true; }, 220);
   if (qrModalLastFocused && typeof qrModalLastFocused.focus === "function") qrModalLastFocused.focus();
+
+  if (qrModalHistoryPushed) {
+    qrModalHistoryPushed = false;
+    if (!fromPopState) history.back();
+  }
 }
+
+/* Back button / gesture while the popup is open: close the popup instead
+   of navigating to the previous page. */
+window.addEventListener("popstate", () => {
+  if (qrModalOverlay && qrModalOverlay.classList.contains("open")) {
+    closeQrModal(true);
+  }
+});
 
 /* ---- QR popup download: render the card to a transparent PNG ----
    Uses html-to-image to snapshot the whole popup (tape, QR, label,
